@@ -361,40 +361,77 @@ while ($row = $productResult->fetch_assoc()) {
             ?>
 
             <?php
-            $whereClauses = [];
+            $invoice_date = $_GET['invoice_date'] ?? '';
+            $status = $_GET['status'] ?? '';
+            $search = $_GET['search'] ?? '';
+            $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+            $perPage = 8;
+            $offset = ($page - 1) * $perPage;
 
-            // Filter customer_name
-            if (!empty($_GET['customer_name'])) {
-                $customer_name = mysqli_real_escape_string($mysqli, $_GET['customer_name']);
-                $whereClauses[] = "c.name LIKE '%$customer_name%'";
+            // Untuk filter
+            $where = [];
+            if (!empty($invoice_date)) {
+                $where[] = "DATE(i.invoice_date) = '" . mysqli_real_escape_string($mysqli, $invoice_date) . "'";
+            }
+            if (!empty($status)) {
+                $where[] = "i.status = '" . mysqli_real_escape_string($mysqli, $status) . "'";
+            }
+            if (!empty($search)) {
+                $search = mysqli_real_escape_string($mysqli, $search);
+                $where[] = "(i.invoice_id LIKE '%$search%' OR c.name LIKE '%$search%')";
             }
 
-            // Filter invoice_date
-            if (!empty($_GET['invoice_date'])) {
-                $invoice_date = mysqli_real_escape_string($mysqli, $_GET['invoice_date']);
-                $whereClauses[] = "i.invoice_date = '$invoice_date'";
+            $whereSql = count($where) > 0 ? "WHERE " . implode(" AND ", $where) : "";
+
+            $totalSql = "SELECT COUNT(DISTINCT i.id) as total FROM invoices i 
+                LEFT JOIN customers c ON i.customer_id = c.id 
+                $whereSql";
+            $totalResult = mysqli_query($mysqli, $totalSql);
+            $totalData = mysqli_fetch_assoc($totalResult)['total'];
+            $totalPages = ceil($totalData / $perPage);
+
+            $sql = "SELECT 
+            i.id, i.invoice_id, i.invoice_date, i.status, i.customer_id,
+            c.name AS customer_name,
+            ii.product_name, ii.qty, ii.price, ii.subtotal
+        FROM invoices i
+        LEFT JOIN customers c ON i.customer_id = c.id
+        LEFT JOIN invoice_items ii ON i.id = ii.invoice_id
+        $whereSql
+        ORDER BY i.id DESC
+        LIMIT $perPage OFFSET $offset";
+
+            $result = mysqli_query($mysqli, $sql);
+
+            $invoices = [];
+            while ($row = mysqli_fetch_assoc($result)) {
+                $invoice_id = $row['id'];
+                if (!isset($invoices[$invoice_id])) {
+                    $invoices[$invoice_id] = [
+                        'id' => $row['id'],
+                        'invoice_id' => $row['invoice_id'],
+                        'invoice_date' => $row['invoice_date'],
+                        'customer_id' => $row['customer_id'],
+                        'customer_name' => $row['customer_name'],
+                        'status' => $row['status'],
+                        'items' => [],
+                    ];
+                }
+                if (
+                    isset($row['product_name']) &&
+                    isset($row['qty']) &&
+                    isset($row['price']) &&
+                    isset($row['subtotal'])
+                ) {
+                    $invoices[$invoice_id]['items'][] = [
+                        'name' => $row['product_name'],
+                        'qty' => $row['qty'],
+                        'price' => $row['price'],
+                        'subtotal' => $row['subtotal'],
+                    ];
+                }
             }
 
-            // Filter status
-            if (!empty($_GET['status'])) {
-                $status = mysqli_real_escape_string($mysqli, $_GET['status']);
-                $whereClauses[] = "i.status = '$status'";
-            }
-
-            // Gabungkan semua klausa WHERE
-            $whereSQL = '';
-            if (!empty($whereClauses)) {
-                $whereSQL = 'WHERE ' . implode(' AND ', $whereClauses);
-            }
-
-            // Query utama
-            $query = "SELECT i.*, c.name AS customer_name 
-                        FROM invoices i
-                        LEFT JOIN customers c ON c.id = i.customer_id
-                        $whereSQL
-                        ORDER BY i.invoice_date DESC";
-
-            $result = mysqli_query($mysqli, $query);
             ?>
 
             <div class="page-wrapper">
@@ -409,35 +446,13 @@ while ($row = $productResult->fetch_assoc()) {
                     </div>
 
                     <!-- Table -->
-                    <div class="card">
-                        <div class="card-header">
-                            <div class="d-flex flex-wrap justify-content-between align-items-end gap-3 w-100">
-                                <!-- Title + Show -->
-                                <div>
-                                    <h3 class="card-title mb-1">List of invoices</h3>
-                                    <div class="form-group">
-                                        <label for="show" class="form-label mb-1">Show</label>
-                                        <form method="GET" class="d-inline">
-                                            <select name="show" id="show" class="form-select form-select-sm" onchange="this.form.submit()">
-                                                <option value="10" <?= (isset($_GET['show']) && $_GET['show'] == 10) ? 'selected' : '' ?>>10</option>
-                                                <option value="25" <?= (isset($_GET['show']) && $_GET['show'] == 25) ? 'selected' : '' ?>>25</option>
-                                                <option value="50" <?= (isset($_GET['show']) && $_GET['show'] == 50) ? 'selected' : '' ?>>50</option>
-                                                <option value="100" <?= (isset($_GET['show']) && $_GET['show'] == 100) ? 'selected' : '' ?>>100</option>
-                                            </select>
-                                        </form>
-                                    </div>
-                                </div>
-
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 class="card-title">List of invoices</h3>
                                 <!-- Filter Form -->
                                 <div class="ms-auto">
                                     <form method="GET" class="d-flex flex-wrap align-items-end gap-3">
-                                        <div class="form-group">
-                                            <label for="customer_name" class="form-label mb-1">Customer</label>
-                                            <input type="text" name="customer_name" id="customer_name" class="form-control form-control-sm"
-                                                placeholder="Masukkan nama customer"
-                                                value="<?= isset($_GET['customer_name']) ? htmlspecialchars($_GET['customer_name']) : '' ?>">
-                                        </div>
-
                                         <div class="form-group">
                                             <label for="invoice_date" class="form-label mb-1">Tanggal Invoice</label>
                                             <input type="date" name="invoice_date" id="invoice_date" class="form-control form-control-sm"
@@ -460,25 +475,42 @@ while ($row = $productResult->fetch_assoc()) {
                                     </form>
                                 </div>
                             </div>
-                        </div>
-                        <div class="table-responsive">
-                            <table class="table card-table table-vcenter text-nowrap datatable">
-                                <thead>
-                                    <tr>
-                                        <th>No</th>
-                                        <th>Invoice ID</th>
-                                        <th>Customer</th>
-                                        <th>Tanggal</th>
-                                        <th>Total</th>
-                                        <th>Status</th>
-                                        <th>Aksi</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php
-                                    // Kelompokkan item per invoice
-                                    $invoices = [];
-                                    $sql = "SELECT 
+                            <div class="card-body border-bottom py-3">
+                                <div class="d-flex">
+                                    <div class="text-secondary">
+                                        Show
+                                        <div class="mx-2 d-inline-block">
+                                            <input type="text" class="form-control form-control-sm" value="8" size="3" aria-label="Invoices count" />
+                                        </div>
+                                        entries
+                                    </div>
+                                    <form method="GET" class="d-flex gap-2 ms-auto text-secondary">
+                                        <input type="text" name="search" value="<?= htmlspecialchars($_GET['search'] ?? '') ?>" class="form-control form-control-sm " placeholder="Search invoice / customer">
+                                        <button type="submit" class="btn btn-sm btn-primary">Search</button>
+                                    </form>
+                                </div>
+                            </div>
+
+                            <div class="table-responsive">
+                                <table class="table table-selectable card-table table-vcenter text-nowrap datatable">
+                                    <thead>
+                                        <tr>
+                                            <th class="w-1"><input class="form-check-input m-0 align-middle" type="checkbox" aria-label="Select all invoices" /></th>
+                                            <th class="w-1">No.</th>
+                                            <th>Invoice ID</th>
+                                            <th>Customer</th>
+                                            <th>Tanggal</th>
+                                            <th>Total</th>
+                                            <th>Status</th>
+                                            <th>Aksi</th>
+                                            <th></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <?php
+                                        // Kelompokkan item per invoice
+                                        $invoices = [];
+                                        $sql = "SELECT 
                                                 i.id,
                                                 i.invoice_id,
                                                 i.invoice_date,
@@ -494,89 +526,134 @@ while ($row = $productResult->fetch_assoc()) {
                                             LEFT JOIN invoice_items ii ON i.id = ii.invoice_id
                                             ORDER BY i.id ASC
                                             ";
-                                    $result = mysqli_query($mysqli, $sql);
+                                        $result = mysqli_query($mysqli, $sql);
 
-                                    mysqli_data_seek($result, 0);
-                                    while ($row = mysqli_fetch_assoc($result)) {
-                                        $invoice_id = $row['id'];
+                                        mysqli_data_seek($result, 0);
+                                        while ($row = mysqli_fetch_assoc($result)) {
+                                            $invoice_id = $row['id'];
 
-                                        if (!isset($invoices[$invoice_id])) {
-                                            $invoices[$invoice_id] = [
-                                                'id' => $row['id'],
-                                                'invoice_id' => $row['invoice_id'],
-                                                'invoice_date' => $row['invoice_date'],
-                                                'customer_id' => $row['customer_id'],
-                                                'customer_name' => $row['customer_name'],
-                                                'status' => $row['status'],
-                                                'items' => [],
-                                            ];
+                                            if (!isset($invoices[$invoice_id])) {
+                                                $invoices[$invoice_id] = [
+                                                    'id' => $row['id'],
+                                                    'invoice_id' => $row['invoice_id'],
+                                                    'invoice_date' => $row['invoice_date'],
+                                                    'customer_id' => $row['customer_id'],
+                                                    'customer_name' => $row['customer_name'],
+                                                    'status' => $row['status'],
+                                                    'items' => [],
+                                                ];
+                                            }
+
+                                            // Tambah item hanya jika semua kolom produk tersedia
+                                            if (
+                                                isset($row['product_name']) &&
+                                                isset($row['qty']) &&
+                                                isset($row['price']) &&
+                                                isset($row['subtotal'])
+                                            ) {
+                                                $invoices[$invoice_id]['items'][] = [
+                                                    'name' => $row['product_name'],
+                                                    'qty' => $row['qty'],
+                                                    'price' => $row['price'],
+                                                    'subtotal' => $row['subtotal'],
+                                                ];
+                                            }
                                         }
 
-                                        // Tambah item hanya jika semua kolom produk tersedia
-                                        if (
-                                            isset($row['product_name']) &&
-                                            isset($row['qty']) &&
-                                            isset($row['price']) &&
-                                            isset($row['subtotal'])
-                                        ) {
-                                            $invoices[$invoice_id]['items'][] = [
-                                                'name' => $row['product_name'],
-                                                'qty' => $row['qty'],
-                                                'price' => $row['price'],
-                                                'subtotal' => $row['subtotal'],
-                                            ];
-                                        }
-                                    }
+                                        $no = 1;
+                                        foreach ($invoices as $inv) {
+                                        ?>
+                                            <tr>
+                                                <td><input class="form-check-input m-0 align-middle table-selectable-check" type="checkbox" aria-label="Select invoice" /></td>
+                                                <td><span class="text-secondary"><?= $no++; ?></span></td>
+                                                <td><?= $inv['invoice_id']; ?></td>
+                                                <td><?= $inv['customer_name']; ?></td>
+                                                <td><?= date('d M Y', strtotime($inv['invoice_date'])); ?></td>
+                                                <td>
+                                                    Rp<?= number_format(array_sum(array_column($inv['items'] ?? [], 'subtotal')), 0, ',', '.'); ?>
+                                                </td>
+                                                <td>
+                                                    <span class="badge bg-<?= $inv['status'] == 'Transfer' ? 'green' : 'yellow'; ?> text-white">
+                                                        <?= $inv['status']; ?>
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <a href="#" class="btn btn-sm btn-purple btn-edit-invoice"
+                                                        data-id="<?= $inv['id']; ?>"
+                                                        data-invoice-id="<?= $inv['invoice_id']; ?>"
+                                                        data-invoice-date="<?= $inv['invoice_date']; ?>"
+                                                        data-status="<?= $inv['status']; ?>"
+                                                        data-customer-id="<?= $inv['customer_id']; ?>"
+                                                        data-bs-toggle="modal"
+                                                        data-bs-target="#modal-edit-invoice">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-edit">
+                                                            <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                                                            <path d="M7 7h-1a2 2 0 0 0 -2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2 -2v-1" />
+                                                            <path d="M20.385 6.585a2.1 2.1 0 0 0 -2.97 -2.97l-8.415 8.385v3h3l8.385 -8.415z" />
+                                                            <path d="M16 5l3 3" />
+                                                        </svg>
+                                                    </a>
+                                                    <a href="invoice_delete.php?id=<?= $inv['id']; ?>" class="btn btn-sm btn-danger btn-delete-invoice">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-trash">
+                                                            <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                                                            <path d="M4 7l16 0" />
+                                                            <path d="M10 11l0 6" />
+                                                            <path d="M14 11l0 6" />
+                                                            <path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" />
+                                                            <path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" />
+                                                        </svg>
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                        <?php } ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="card-footer">
+                                <div class="row g-2 justify-content-center justify-content-sm-between">
+                                    <div class="col-auto d-flex align-items-center">
+                                        <?php
+                                        $startEntry = $offset + 1;
+                                        $endEntry = min($offset + $perPage, $totalData);
+                                        ?>
+                                        <p class="m-0 text-secondary">
+                                            Showing <strong><?= $startEntry; ?> to <?= $endEntry; ?></strong> of <strong><?= $totalData; ?> entries</strong>
+                                        </p>
+                                    </div>
+                                    <div class="col-auto">
+                                        <ul class="pagination m-0 ms-auto">
+                                            <?php if ($page > 1): ?>
+                                                <li class="page-item">
+                                                    <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $page - 1])) ?>">
+                                                        <svg ...>
+                                                            <path d="M15 6l-6 6l6 6" />
+                                                        </svg>
+                                                    </a>
+                                                </li>
+                                            <?php endif; ?>
 
-                                    $no = 1;
-                                    foreach ($invoices as $inv) {
-                                    ?>
-                                        <tr>
-                                            <td><?= $no++; ?></td>
-                                            <td><?= $inv['invoice_id']; ?></td>
-                                            <td><?= $inv['customer_name']; ?></td>
-                                            <td><?= date('d M Y', strtotime($inv['invoice_date'])); ?></td>
-                                            <td>
-                                                Rp<?= number_format(array_sum(array_column($inv['items'] ?? [], 'subtotal')), 0, ',', '.'); ?>
-                                            </td>
-                                            <td>
-                                                <span class="badge bg-<?= $inv['status'] == 'Transfer' ? 'green' : 'yellow'; ?> text-white">
-                                                    <?= $inv['status']; ?>
-                                                </span>
-                                            </td>
-                                            <td>
-                                                <a href="#" class="btn btn-sm btn-purple btn-edit-invoice"
-                                                    data-id="<?= $inv['id']; ?>"
-                                                    data-invoice-id="<?= $inv['invoice_id']; ?>"
-                                                    data-invoice-date="<?= $inv['invoice_date']; ?>"
-                                                    data-status="<?= $inv['status']; ?>"
-                                                    data-customer-id="<?= $inv['customer_id']; ?>"
-                                                    data-bs-toggle="modal"
-                                                    data-bs-target="#modal-edit-invoice">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-edit">
-                                                        <path stroke="none" d="M0 0h24v24H0z" fill="none" />
-                                                        <path d="M7 7h-1a2 2 0 0 0 -2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2 -2v-1" />
-                                                        <path d="M20.385 6.585a2.1 2.1 0 0 0 -2.97 -2.97l-8.415 8.385v3h3l8.385 -8.415z" />
-                                                        <path d="M16 5l3 3" />
-                                                    </svg>
-                                                </a>
-                                                <a href="invoice_delete.php?id=<?= $inv['id']; ?>" class="btn btn-sm btn-danger btn-delete-invoice">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-trash">
-                                                        <path stroke="none" d="M0 0h24v24H0z" fill="none" />
-                                                        <path d="M4 7l16 0" />
-                                                        <path d="M10 11l0 6" />
-                                                        <path d="M14 11l0 6" />
-                                                        <path d="M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2 -2l1 -12" />
-                                                        <path d="M9 7v-3a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v3" />
-                                                    </svg>
-                                                </a>
-                                            </td>
-                                        </tr>
-                                    <?php } ?>
-                                </tbody>
-                            </table>
+                                            <?php for ($i = 1; $i <= $totalPages; $i++): ?>
+                                                <li class="page-item <?= ($page == $i) ? 'active' : '' ?>">
+                                                    <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $i])) ?>"><?= $i ?></a>
+                                                </li>
+                                            <?php endfor; ?>
+
+                                            <?php if ($page < $totalPages): ?>
+                                                <li class="page-item">
+                                                    <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $page + 1])) ?>">
+                                                        <svg ...>
+                                                            <path d="M9 6l6 6l-6 6" />
+                                                        </svg>
+                                                    </a>
+                                                </li>
+                                            <?php endif; ?>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
+
                 </div>
             </div>
             <!-- END PAGE BODY -->
@@ -999,7 +1076,7 @@ while ($row = $productResult->fetch_assoc()) {
     <script src="../../assets/libs/jsvectormap/dist/maps/world.js" defer></script>
     <script src="../../assets/libs/jsvectormap/dist/maps/world-merc.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script> -->
 
     <!-- END PAGE LIBRARIES -->
 
