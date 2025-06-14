@@ -477,16 +477,31 @@ while ($row = $productResult->fetch_assoc()) {
                             </div>
                             <div class="card-body border-bottom py-3">
                                 <div class="d-flex">
-                                    <div class="text-secondary">
-                                        Show
-                                        <div class="mx-2 d-inline-block">
-                                            <input type="text" class="form-control form-control-sm" value="8" size="3" aria-label="Invoices count" />
+                                    <form method="GET" class="d-flex">
+                                        <div class="text-secondary">
+                                            Show
+                                            <div class="mx-2 d-inline-block">
+                                                <select name="per_page" class="form-control form-control-sm" onchange="this.form.submit()">
+                                                    <?php
+                                                    $options = [5, 10, 25, 50];
+                                                    $selectedPerPage = $_GET['per_page'] ?? 10;
+                                                    foreach ($options as $opt) {
+                                                        $selected = ($opt == $selectedPerPage) ? 'selected' : '';
+                                                        echo "<option value=\"$opt\" $selected>$opt</option>";
+                                                    }
+                                                    ?>
+                                                </select>
+                                            </div>
+                                            entries
                                         </div>
-                                        entries
-                                    </div>
-                                    <form method="GET" class="d-flex gap-2 ms-auto text-secondary">
-                                        <input type="text" name="search" value="<?= htmlspecialchars($_GET['search'] ?? '') ?>" class="form-control form-control-sm " placeholder="Search invoice / customer">
-                                        <button type="submit" class="btn btn-sm btn-primary">Search</button>
+                                        <!-- Simpan filter sebelumnya agar tidak hilang -->
+                                        <?php
+                                        foreach ($_GET as $key => $value) {
+                                            if (!in_array($key, ['per_page', 'page'])) {
+                                                echo "<input type=\"hidden\" name=\"" . htmlspecialchars($key) . "\" value=\"" . htmlspecialchars($value) . "\">";
+                                            }
+                                        }
+                                        ?>
                                     </form>
                                 </div>
                             </div>
@@ -495,7 +510,7 @@ while ($row = $productResult->fetch_assoc()) {
                                 <table class="table table-selectable card-table table-vcenter text-nowrap datatable">
                                     <thead>
                                         <tr>
-                                            <th class="w-1"><input class="form-check-input m-0 align-middle" type="checkbox" aria-label="Select all invoices" /></th>
+                                            <!-- <th class="w-1"><input class="form-check-input m-0 align-middle" type="checkbox" aria-label="Select all invoices" /></th> -->
                                             <th class="w-1">No.</th>
                                             <th>Invoice ID</th>
                                             <th>Customer</th>
@@ -508,24 +523,34 @@ while ($row = $productResult->fetch_assoc()) {
                                     </thead>
                                     <tbody>
                                         <?php
+                                        $perPage = isset($_GET['per_page']) ? (int) $_GET['per_page'] : 10;
+                                        $page = isset($_GET['page']) ? (int) $_GET['page'] : 1;
+                                        $offset = ($page - 1) * $perPage;
+                                        $totalQuery = "SELECT COUNT(DISTINCT i.id) AS total FROM invoices i";
+                                        $totalResult = mysqli_query($mysqli, $totalQuery);
+                                        $totalData = mysqli_fetch_assoc($totalResult)['total'];
+                                        $totalPages = ceil($totalData / $perPage);
+
+
                                         // Kelompokkan item per invoice
                                         $invoices = [];
                                         $sql = "SELECT 
-                                                i.id,
-                                                i.invoice_id,
-                                                i.invoice_date,
-                                                i.status,
-                                                i.customer_id,
-                                                c.name AS customer_name,
-                                                ii.product_name,
-                                                ii.qty,
-                                                ii.price,
-                                                ii.subtotal
-                                            FROM invoices i
-                                            LEFT JOIN customers c ON i.customer_id = c.id
-                                            LEFT JOIN invoice_items ii ON i.id = ii.invoice_id
-                                            ORDER BY i.id ASC
-                                            ";
+                                                    i.id,
+                                                    i.invoice_id,
+                                                    i.invoice_date,
+                                                    i.status,
+                                                    i.customer_id,
+                                                    c.name AS customer_name,
+                                                    ii.product_name,
+                                                    ii.qty,
+                                                    ii.price,
+                                                    ii.subtotal
+                                                FROM invoices i
+                                                LEFT JOIN customers c ON i.customer_id = c.id
+                                                LEFT JOIN invoice_items ii ON i.id = ii.invoice_id
+                                                ORDER BY i.id ASC
+                                                LIMIT $perPage OFFSET $offset";
+
                                         $result = mysqli_query($mysqli, $sql);
 
                                         mysqli_data_seek($result, 0);
@@ -564,7 +589,7 @@ while ($row = $productResult->fetch_assoc()) {
                                         foreach ($invoices as $inv) {
                                         ?>
                                             <tr>
-                                                <td><input class="form-check-input m-0 align-middle table-selectable-check" type="checkbox" aria-label="Select invoice" /></td>
+                                                <!-- <td><input class="form-check-input m-0 align-middle table-selectable-check" type="checkbox" aria-label="Select invoice" /></td> -->
                                                 <td><span class="text-secondary"><?= $no++; ?></span></td>
                                                 <td><?= $inv['invoice_id']; ?></td>
                                                 <td><?= $inv['customer_name']; ?></td>
@@ -612,41 +637,46 @@ while ($row = $productResult->fetch_assoc()) {
                             <div class="card-footer">
                                 <div class="row g-2 justify-content-center justify-content-sm-between">
                                     <div class="col-auto d-flex align-items-center">
-                                        <?php
-                                        $startEntry = $offset + 1;
-                                        $endEntry = min($offset + $perPage, $totalData);
-                                        ?>
+                                        <!-- <?php
+                                                $startEntry = $offset + 1;
+                                                $endEntry = min($offset + $perPage, $totalData);
+                                                ?>
                                         <p class="m-0 text-secondary">
                                             Showing <strong><?= $startEntry; ?> to <?= $endEntry; ?></strong> of <strong><?= $totalData; ?> entries</strong>
-                                        </p>
+                                        </p> -->
                                     </div>
                                     <div class="col-auto">
-                                        <ul class="pagination m-0 ms-auto">
-                                            <?php if ($page > 1): ?>
-                                                <li class="page-item">
-                                                    <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $page - 1])) ?>">
-                                                        <svg ...>
-                                                            <path d="M15 6l-6 6l6 6" />
-                                                        </svg>
-                                                    </a>
-                                                </li>
-                                            <?php endif; ?>
+                                        <?php if ($totalPages > 1): ?>
+                                            <ul class="pagination m-0 ms-auto">
+                                                <?php if ($page > 1): ?>
+                                                    <li class="page-item">
+                                                        <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $page - 1])) ?>">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" class="icon icon-tabler icons-tabler-filled icon-tabler-caret-left">
+                                                                <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                                                                <path d="M13.883 5.007l.058 -.005h.118l.058 .005l.06 .009l.052 .01l.108 .032l.067 .027l.132 .07l.09 .065l.081 .073l.083 .094l.054 .077l.054 .096l.017 .036l.027 .067l.032 .108l.01 .053l.01 .06l.004 .057l.002 .059v12c0 .852 -.986 1.297 -1.623 .783l-.084 -.076l-6 -6a1 1 0 0 1 -.083 -1.32l.083 -.094l6 -6l.094 -.083l.077 -.054l.096 -.054l.036 -.017l.067 -.027l.108 -.032l.053 -.01l.06 -.01z" />
+                                                            </svg>
+                                                        </a>
+                                                    </li>
+                                                <?php endif; ?>
 
-                                            <?php for ($i = 1; $i <= $totalPages; $i++): ?>
-                                                <li class="page-item <?= ($page == $i) ? 'active' : '' ?>">
-                                                    <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $i])) ?>"><?= $i ?></a>
-                                                </li>
-                                            <?php endfor; ?>
+                                                <?php for ($i = 1; $i <= $totalPages; $i++): ?>
+                                                    <li class="page-item <?= ($page == $i) ? 'active' : '' ?>">
+                                                        <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $i])) ?>"><?= $i ?></a>
+                                                    </li>
+                                                <?php endfor; ?>
 
-                                            <?php if ($page < $totalPages): ?>
-                                                <li class="page-item">
-                                                    <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $page + 1])) ?>">
-                                                        <svg ...>
-                                                            <path d="M9 6l6 6l-6 6" />
-                                                        </svg>
-                                                    </a>
-                                                </li>
-                                            <?php endif; ?>
+                                                <?php if ($page < $totalPages): ?>
+                                                    <li class="page-item">
+                                                        <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $page + 1])) ?>">
+                                                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" class="icon icon-tabler icons-tabler-filled icon-tabler-caret-right">
+                                                                <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                                                                <path d="M9 6c0 -.852 .986 -1.297 1.623 -.783l.084 .076l6 6a1 1 0 0 1 .083 1.32l-.083 .094l-6 6l-.094 .083l-.077 .054l-.096 .054l-.036 .017l-.067 .027l-.108 .032l-.053 .01l-.06 .01l-.057 .004l-.059 .002l-.059 -.002l-.058 -.005l-.06 -.009l-.052 -.01l-.108 -.032l-.067 -.027l-.132 -.07l-.09 -.065l-.081 -.073l-.083 -.094l-.054 -.077l-.054 -.096l-.017 -.036l-.027 -.067l-.032 -.108l-.01 -.053l-.01 -.06l-.004 -.057l-.002 -12.059z" />
+                                                            </svg>
+                                                        </a>
+                                                    </li>
+                                                <?php endif; ?>
+                                            </ul>
+                                        <?php endif; ?>
                                         </ul>
                                     </div>
                                 </div>

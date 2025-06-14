@@ -339,16 +339,36 @@ if ($result_customers) {
                     <div class="card">
                         <div class="card-header d-flex justify-content-between align-items-center">
                             <h3 class="card-title mb-0">List of products</h3>
-                            <form method="GET" class="d-flex align-items-center" style="gap: 0.5rem;">
-                                <label for="show" class="mb-0">Show</label>
-                                <select name="show" id="show" class="form-select form-select-sm" onchange="this.form.submit()">
-                                    <option value="10" <?= (isset($_GET['show']) && $_GET['show'] == 10) ? 'selected' : '' ?>>10</option>
-                                    <option value="25" <?= (isset($_GET['show']) && $_GET['show'] == 25) ? 'selected' : '' ?>>25</option>
-                                    <option value="50" <?= (isset($_GET['show']) && $_GET['show'] == 50) ? 'selected' : '' ?>>50</option>
-                                    <option value="100" <?= (isset($_GET['show']) && $_GET['show'] == 100) ? 'selected' : '' ?>>100</option>
-                                </select>
-                                <span class="mb-0">entries</span>
-                            </form>
+                        </div>
+                        <div class="card-body border-bottom py-3">
+                            <div class="d-flex">
+                                <form method="GET" class="d-flex">
+                                    <div class="text-secondary">
+                                        Show
+                                        <div class="mx-2 d-inline-block">
+                                            <select name="per_page" class="form-control form-control-sm" onchange="this.form.submit()">
+                                                <?php
+                                                $options = [5, 10, 25, 50];
+                                                $selectedPerPage = $_GET['per_page'] ?? 10;
+                                                foreach ($options as $opt) {
+                                                    $selected = ($opt == $selectedPerPage) ? 'selected' : '';
+                                                    echo "<option value=\"$opt\" $selected>$opt</option>";
+                                                }
+                                                ?>
+                                            </select>
+                                        </div>
+                                        entries
+                                    </div>
+                                    <!-- Simpan filter sebelumnya agar tidak hilang -->
+                                    <?php
+                                    foreach ($_GET as $key => $value) {
+                                        if (!in_array($key, ['per_page', 'page'])) {
+                                            echo "<input type=\"hidden\" name=\"" . htmlspecialchars($key) . "\" value=\"" . htmlspecialchars($value) . "\">";
+                                        }
+                                    }
+                                    ?>
+                                </form>
+                            </div>
                         </div>
                         <div class="table-responsive">
                             <table class="table card-table table-vcenter text-nowrap datatable">
@@ -364,10 +384,19 @@ if ($result_customers) {
                                 </thead>
                                 <tbody>
                                     <?php
+                                    $perPage = isset($_GET['per_page']) ? (int) $_GET['per_page'] : 10;
+                                    $page = isset($_GET['page']) ? (int) $_GET['page'] : 1;
+                                    $offset = ($page - 1) * $perPage;
+                                    $totalQuery = "SELECT COUNT(DISTINCT p.id) AS total FROM products p";
+                                    $totalResult = mysqli_query($mysqli, $totalQuery);
+                                    $totalData = mysqli_fetch_assoc($totalResult)['total'];
+                                    $totalPages = ceil($totalData / $perPage);
+
                                     $no = 1;
                                     $sql = "SELECT *
                                             FROM products
-                                            ORDER BY products.product_name ASC";
+                                            ORDER BY products.product_name ASC
+                                            LIMIT $perPage OFFSET $offset";
                                     $result = mysqli_query($mysqli, $sql);
                                     while ($row = mysqli_fetch_assoc($result)) {
                                     ?>
@@ -408,6 +437,53 @@ if ($result_customers) {
                                     <?php } ?>
                                 </tbody>
                             </table>
+                        </div>
+                        <div class="card-footer">
+                            <div class="row g-2 justify-content-center justify-content-sm-between">
+                                <div class="col-auto d-flex align-items-center">
+                                    <!-- <?php
+                                            $startEntry = $offset + 1;
+                                            $endEntry = min($offset + $perPage, $totalData);
+                                            ?>
+                                    <p class="m-0 text-secondary">
+                                        Showing <strong><?= $startEntry; ?> to <?= $endEntry; ?></strong> of <strong><?= $totalData; ?> entries</strong>
+                                    </p> -->
+                                </div>
+                                <div class="col-auto">
+                                    <?php if ($totalPages > 1): ?>
+                                        <ul class="pagination m-0 ms-auto">
+                                            <?php if ($page > 1): ?>
+                                                <li class="page-item">
+                                                    <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $page - 1])) ?>">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" class="icon icon-tabler icons-tabler-filled icon-tabler-caret-left">
+                                                            <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                                                            <path d="M13.883 5.007l.058 -.005h.118l.058 .005l.06 .009l.052 .01l.108 .032l.067 .027l.132 .07l.09 .065l.081 .073l.083 .094l.054 .077l.054 .096l.017 .036l.027 .067l.032 .108l.01 .053l.01 .06l.004 .057l.002 .059v12c0 .852 -.986 1.297 -1.623 .783l-.084 -.076l-6 -6a1 1 0 0 1 -.083 -1.32l.083 -.094l6 -6l.094 -.083l.077 -.054l.096 -.054l.036 -.017l.067 -.027l.108 -.032l.053 -.01l.06 -.01z" />
+                                                        </svg>
+                                                    </a>
+                                                </li>
+                                            <?php endif; ?>
+
+                                            <?php for ($i = 1; $i <= $totalPages; $i++): ?>
+                                                <li class="page-item <?= ($page == $i) ? 'active' : '' ?>">
+                                                    <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $i])) ?>"><?= $i ?></a>
+                                                </li>
+                                            <?php endfor; ?>
+
+                                            <?php if ($page < $totalPages): ?>
+                                                <li class="page-item">
+                                                    <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $page + 1])) ?>">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" class="icon icon-tabler icons-tabler-filled icon-tabler-caret-right">
+                                                            <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                                                            <path d="M9 6c0 -.852 .986 -1.297 1.623 -.783l.084 .076l6 6a1 1 0 0 1 .083 1.32l-.083 .094l-6 6l-.094 .083l-.077 .054l-.096 .054l-.036 .017l-.067 .027l-.108 .032l-.053 .01l-.06 .01l-.057 .004l-.059 .002l-.059 -.002l-.058 -.005l-.06 -.009l-.052 -.01l-.108 -.032l-.067 -.027l-.132 -.07l-.09 -.065l-.081 -.073l-.083 -.094l-.054 -.077l-.054 -.096l-.017 -.036l-.027 -.067l-.032 -.108l-.01 -.053l-.01 -.06l-.004 -.057l-.002 -12.059z" />
+                                                        </svg>
+                                                    </a>
+                                                </li>
+                                            <?php endif; ?>
+                                        </ul>
+                                    <?php endif; ?>
+                                    </ul>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

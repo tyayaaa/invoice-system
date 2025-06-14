@@ -33,6 +33,9 @@ $mysqli->begin_transaction();
 try {
     // Cek stok semua produk terlebih dahulu
     $checkStockStmt = $mysqli->prepare("SELECT qty FROM products WHERE product_name = ?");
+
+    $product_in_products = [];
+
     for ($i = 0; $i < count($product_names); $i++) {
         $name = $product_names[$i];
         $qty = (int)$product_qtys[$i];
@@ -40,15 +43,22 @@ try {
         $checkStockStmt->bind_param("s", $name);
         $checkStockStmt->execute();
         $checkStockStmt->bind_result($available_qty);
-        if (!$checkStockStmt->fetch()) {
-            throw new Exception("Produk '$name' tidak ditemukan.");
+
+        if ($checkStockStmt->fetch()) {
+            // Produk ada di tabel products
+            if ($available_qty < $qty) {
+                throw new Exception("Stok untuk produk '$name' tidak mencukupi. Tersedia: $available_qty, diminta: $qty");
+            }
+            $product_in_products[$name] = true;
+        } else {
+            // Produk manual, tidak ada di tabel products
+            $product_in_products[$name] = false;
         }
-        if ($available_qty < $qty) {
-            throw new Exception("Stok untuk produk '$name' tidak mencukupi. Tersedia: $available_qty, diminta: $qty");
-        }
+
         $checkStockStmt->reset();
     }
     $checkStockStmt->close();
+
 
     // Simpan invoice utama
     $stmt = $mysqli->prepare("INSERT INTO invoices (invoice_id, customer_id, invoice_date, subtotal, status) VALUES (?, ?, ?, ?, ?)");
@@ -74,9 +84,11 @@ try {
         $insertItemStmt->bind_param("isidd", $invoice_db_id, $name, $qty, $price, $sub);
         $insertItemStmt->execute();
 
-        // Kurangi stok produk
-        $updateStockStmt->bind_param("is", $qty, $name);
-        $updateStockStmt->execute();
+        if (!empty($product_in_products[$name])) {
+            // Hanya kurangi stok jika produk ada di tabel products
+            $updateStockStmt->bind_param("is", $qty, $name);
+            $updateStockStmt->execute();
+        }
     }
 
     $insertItemStmt->close();
