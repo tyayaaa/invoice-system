@@ -81,6 +81,16 @@ while ($row = $productResult->fetch_assoc()) {
     <!-- BEGIN CUSTOM FONT -->
     <style>
         @import url('https://rsms.me/inter/inter.css');
+
+        #product-modal {
+            z-index: 1060 !important;
+        }
+
+        .modal-backdrop.product-backdrop {
+            z-index: 1059 !important;
+        }
+    </style>
+
     </style>
     <!-- END CUSTOM FONT -->
     <script type="module" integrity="sha512-I1nWw2KfQnK/t/zOlALFhLrZA1yzsCzBl7DxamXdg/QF7kq+O4sYBZLl0DFCE7vP2ixPccL/k0/oqvhyDB73zQ==" src="/.11ty/reload-client.js"></script>
@@ -364,7 +374,8 @@ while ($row = $productResult->fetch_assoc()) {
             $status = $_GET['status'] ?? '';
             $search = $_GET['search'] ?? '';
             $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
-            $perPage = 8;
+            $allowedPerPage = [5, 10, 25, 50];
+            $perPage = isset($_GET['per_page']) && in_array((int) $_GET['per_page'], $allowedPerPage) ? (int) $_GET['per_page'] : 10;
             $offset = ($page - 1) * $perPage;
 
             // Untuk filter
@@ -525,65 +536,72 @@ while ($row = $productResult->fetch_assoc()) {
                                         $perPage = isset($_GET['per_page']) ? (int) $_GET['per_page'] : 10;
                                         $page = isset($_GET['page']) ? (int) $_GET['page'] : 1;
                                         $offset = ($page - 1) * $perPage;
-                                        $totalQuery = "SELECT COUNT(DISTINCT i.id) AS total FROM invoices i";
+
+                                        // Query total invoice untuk pagination
+                                        $totalQuery = "SELECT COUNT(*) AS total FROM invoices";
                                         $totalResult = mysqli_query($mysqli, $totalQuery);
                                         $totalData = mysqli_fetch_assoc($totalResult)['total'];
                                         $totalPages = ceil($totalData / $perPage);
 
+                                        // Ambil ID invoice saja (dengan LIMIT dan OFFSET)
+                                        $invoiceIds = [];
+                                        $sql_invoice_ids = "SELECT id FROM invoices ORDER BY id ASC LIMIT $perPage OFFSET $offset";
+                                        $result_invoice_ids = mysqli_query($mysqli, $sql_invoice_ids);
+                                        while ($row = mysqli_fetch_assoc($result_invoice_ids)) {
+                                            $invoiceIds[] = $row['id'];
+                                        }
 
-                                        // Kelompokkan item per invoice
                                         $invoices = [];
-                                        $sql = "SELECT 
-                                                    i.id,
-                                                    i.invoice_id,
-                                                    i.invoice_date,
-                                                    i.status,
-                                                    i.customer_id,
-                                                    c.name AS customer_name,
-                                                    ii.product_name,
-                                                    ii.qty,
-                                                    ii.price,
-                                                    ii.subtotal
-                                                FROM invoices i
-                                                LEFT JOIN customers c ON i.customer_id = c.id
-                                                LEFT JOIN invoice_items ii ON i.id = ii.invoice_id
-                                                ORDER BY i.id ASC
-                                                LIMIT $perPage OFFSET $offset";
 
-                                        $result = mysqli_query($mysqli, $sql);
+                                        if (!empty($invoiceIds)) {
+                                            $idStr = implode(',', $invoiceIds);
 
-                                        mysqli_data_seek($result, 0);
-                                        while ($row = mysqli_fetch_assoc($result)) {
-                                            $invoice_id = $row['id'];
+                                            // Ambil detail lengkap berdasarkan invoice_id yang sudah difilter
+                                            $sql = "SELECT 
+                                                        i.id, i.invoice_id, i.invoice_date, i.status, i.customer_id,
+                                                        c.name AS customer_name,
+                                                        ii.product_name, ii.qty, ii.price, ii.subtotal
+                                                    FROM invoices i
+                                                    LEFT JOIN customers c ON i.customer_id = c.id
+                                                    LEFT JOIN invoice_items ii ON i.id = ii.invoice_id
+                                                    WHERE i.id IN ($idStr)
+                                                    ORDER BY i.id ASC";
 
-                                            if (!isset($invoices[$invoice_id])) {
-                                                $invoices[$invoice_id] = [
-                                                    'id' => $row['id'],
-                                                    'invoice_id' => $row['invoice_id'],
-                                                    'invoice_date' => $row['invoice_date'],
-                                                    'customer_id' => $row['customer_id'],
-                                                    'customer_name' => $row['customer_name'],
-                                                    'status' => $row['status'],
-                                                    'items' => [],
-                                                ];
-                                            }
+                                            $result = mysqli_query($mysqli, $sql);
 
-                                            // Tambah item hanya jika semua kolom produk tersedia
-                                            if (
-                                                isset($row['product_name']) &&
-                                                isset($row['qty']) &&
-                                                isset($row['price']) &&
-                                                isset($row['subtotal'])
-                                            ) {
-                                                $invoices[$invoice_id]['items'][] = [
-                                                    'name' => $row['product_name'],
-                                                    'qty' => $row['qty'],
-                                                    'price' => $row['price'],
-                                                    'subtotal' => $row['subtotal'],
-                                                ];
+                                            while ($row = mysqli_fetch_assoc($result)) {
+                                                $invoice_id = $row['id'];
+
+                                                if (!isset($invoices[$invoice_id])) {
+                                                    $invoices[$invoice_id] = [
+                                                        'id' => $row['id'],
+                                                        'invoice_id' => $row['invoice_id'],
+                                                        'invoice_date' => $row['invoice_date'],
+                                                        'customer_id' => $row['customer_id'],
+                                                        'customer_name' => $row['customer_name'],
+                                                        'status' => $row['status'],
+                                                        'items' => [],
+                                                    ];
+                                                }
+
+                                                // Tambah item jika ada data
+                                                if (
+                                                    isset($row['product_name']) &&
+                                                    isset($row['qty']) &&
+                                                    isset($row['price']) &&
+                                                    isset($row['subtotal'])
+                                                ) {
+                                                    $invoices[$invoice_id]['items'][] = [
+                                                        'name' => $row['product_name'],
+                                                        'qty' => $row['qty'],
+                                                        'price' => $row['price'],
+                                                        'subtotal' => $row['subtotal'],
+                                                    ];
+                                                }
                                             }
                                         }
 
+                                        // Tampilkan data ke tabel
                                         $no = 1;
                                         foreach ($invoices as $inv) {
                                         ?>
@@ -797,8 +815,13 @@ while ($row = $productResult->fetch_assoc()) {
                                     <div class="col-md-3">
                                         <input type="number" class="form-control" name="product_price[]" placeholder="Price" min="0" step="0.01" required>
                                     </div>
-                                    <div class="col-md-3">
+                                    <div class="col-md-2">
                                         <input type="number" class="form-control" name="product_subtotal[]" placeholder="Subtotal" readonly>
+                                    </div>
+                                    <div class="col-md-1 d-flex align-items-start">
+                                        <button type="button" class="btn btn-sm btn-danger btn-discard-product" title="Remove product">
+                                            &times;
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -820,7 +843,7 @@ while ($row = $productResult->fetch_assoc()) {
     <!-- END MODAL ADD INVOICE -->
 
     <!-- MODAL PRODUCT LIST -->
-    <div class="modal fade" id="product-modal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal fade" id="product-modal" tabindex="1" role="dialog" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
             <div class="modal-content">
                 <div class="modal-header">
@@ -917,7 +940,7 @@ while ($row = $productResult->fetch_assoc()) {
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Products</label>
-                        or <a href="#" class="small text-primary" id="select-product-link">Select a Product</a>
+                        or <a href="#" class="small text-primary" id="select-product-link-edit">Select a Product</a>
                         <div id="product-container-edit">
                             <div class="row g-2 product-row mb-2">
                                 <div class="col-md-4">
@@ -934,7 +957,7 @@ while ($row = $productResult->fetch_assoc()) {
                                 </div>
                             </div>
                         </div>
-                        <button type="button" id="add-product" class="btn btn-sm btn-outline-primary mt-2">Add Product</button>
+                        <button type="button" id="add-product-edit" class="btn btn-sm btn-outline-primary mt-2">Add Product</button>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -1198,57 +1221,8 @@ while ($row = $productResult->fetch_assoc()) {
     </script>
 
     <script>
-        document.querySelectorAll('.btn-edit-invoice').forEach(button => {
-            button.addEventListener('click', async function() {
-                const id = this.dataset.id;
-
-                // Tunda sedikit supaya modal muncul dulu
-                setTimeout(async () => {
-                    try {
-                        const response = await fetch(`get_invoice_data.php?id=${id}`);
-                        const data = await response.json();
-
-                        document.getElementById('edit-id').value = id;
-                        document.getElementById('edit-invoice-id').value = data.invoice_id;
-                        document.getElementById('edit-date').value = data.invoice_date;
-                        document.getElementById('edit-customer').value = data.customer_id;
-                        document.getElementById('status-kasbon').checked = data.status === 'Kasbon';
-                        document.getElementById('status-transfer').checked = data.status === 'Transfer';
-
-                        const productContainer = document.querySelector('#product-container-edit');
-                        console.log('Container ditemukan?', productContainer);
-                        productContainer.innerHTML = '';
-
-                        data.items.forEach(item => {
-                            const row = document.createElement('div');
-                            row.className = 'row g-2 product-row mb-2';
-                            row.innerHTML = `
-                        <div class="col-md-4">
-                            <input type="text" class="form-control" name="product_name[]" value="${item.product_name}" required>
-                        </div>
-                        <div class="col-md-2">
-                            <input type="number" class="form-control" name="product_qty[]" value="${item.qty}" required>
-                        </div>
-                        <div class="col-md-3">
-                            <input type="number" class="form-control" name="product_price[]" value="${item.price}" step="0.01" required>
-                        </div>
-                        <div class="col-md-3">
-                            <input type="number" class="form-control" name="product_subtotal[]" value="${item.subtotal}" readonly>
-                        </div>`;
-                            productContainer.appendChild(row);
-                            console.log('Product container setelah append:', productContainer.innerHTML);
-                        });
-
-                    } catch (err) {
-                        console.error('Gagal memuat data invoice:', err);
-                    }
-                }, 200); // tunda 200ms agar modal muncul dulu
-            });
-        });
-    </script>
-
-    <script>
         document.addEventListener('DOMContentLoaded', function() {
+
             const deleteButtons = document.querySelectorAll('.btn-delete-invoice');
 
             deleteButtons.forEach(button => {
@@ -1333,6 +1307,135 @@ while ($row = $productResult->fetch_assoc()) {
                     bootstrap.Modal.getInstance(document.getElementById('product-modal')).hide();
                 });
             });
+
+            // Event delegation: hapus product row saat klik discard
+            document.getElementById('product-container-add').addEventListener('click', function(e) {
+                if (e.target.classList.contains('btn-discard-product')) {
+                    const allRows = document.querySelectorAll('.product-row');
+                    if (allRows.length > 1) {
+                        e.target.closest('.product-row').remove();
+                    } else {
+                        alert("Minimal satu produk harus ada di invoice.");
+                    }
+                }
+            });
+
+            document.querySelectorAll('.btn-edit-invoice').forEach(button => {
+                button.addEventListener('click', async function() {
+                    const id = this.dataset.id;
+
+                    // Tunda sedikit supaya modal muncul dulu
+                    setTimeout(async () => {
+                        try {
+                            const response = await fetch(`get_invoice_data.php?id=${id}`);
+                            const data = await response.json();
+
+                            document.getElementById('edit-id').value = id;
+                            document.getElementById('edit-invoice-id').value = data.invoice_id;
+                            document.getElementById('edit-date').value = data.invoice_date;
+                            document.getElementById('edit-customer').value = data.customer_id;
+                            document.getElementById('status-kasbon').checked = data.status === 'Kasbon';
+                            document.getElementById('status-transfer').checked = data.status === 'Transfer';
+
+                            const productContainer = document.querySelector('#product-container-edit');
+                            console.log('Container ditemukan?', productContainer);
+                            productContainer.innerHTML = '';
+
+                            data.items.forEach(item => {
+                                const row = document.createElement('div');
+                                row.className = 'row g-2 product-row mb-2';
+                                row.innerHTML = `
+                                            <div class="col-md-4">
+                                            <input type="text" class="form-control" name="product_name[]" value="${item.product_name}" required>
+                                            </div>
+                                            <div class="col-md-2">
+                                            <input type="number" class="form-control" name="product_qty[]" value="${item.qty}" required>
+                                            </div>
+                                            <div class="col-md-3">
+                                            <input type="number" class="form-control" name="product_price[]" value="${item.price}" step="0.01" required>
+                                            </div>
+                                            <div class="col-md-2">
+                                            <input type="number" class="form-control" name="product_subtotal[]" value="${item.subtotal}" readonly>
+                                            </div>
+                                            <div class="col-md-1 d-flex align-items-start">
+                                            <button type="button" class="btn btn-sm btn-danger btn-discard-product" title="Remove product">&times;</button>
+                                            </div>`;
+                                productContainer.appendChild(row);
+                                console.log('Product container setelah append:', productContainer.innerHTML);
+                            });
+
+                        } catch (err) {
+                            console.error('Gagal memuat data invoice:', err);
+                        }
+                    }, 200); // tunda 200ms agar modal muncul dulu
+                });
+
+            });
+
+            // Event delegation: hapus baris produk di modal edit
+            document.getElementById('product-container-edit').addEventListener('click', function(e) {
+                if (e.target.classList.contains('btn-discard-product')) {
+                    const allRows = this.querySelectorAll('.product-row');
+                    console.log("Total baris:", allRows.length);
+                    if (allRows.length > 1) {
+                        e.target.closest('.product-row').remove();
+                    } else {
+                        alert("Minimal satu produk harus ada di invoice.");
+                    }
+                }
+            });
+
+            // Perhitungan subtotal otomatis
+            document.getElementById('product-container-edit').addEventListener('input', function(e) {
+                if (e.target.name === 'product_qty[]' || e.target.name === 'product_price[]') {
+                    const row = e.target.closest('.product-row');
+                    const qty = parseFloat(row.querySelector('input[name="product_qty[]"]').value) || 0;
+                    const price = parseFloat(row.querySelector('input[name="product_price[]"]').value) || 0;
+                    const subtotalInput = row.querySelector('input[name="product_subtotal[]"]');
+                    subtotalInput.value = (qty * price).toFixed(2);
+                }
+            });
+
+            document.getElementById('add-product-edit').addEventListener('click', () => {
+                const container = document.getElementById('product-container-edit');
+                const newRow = container.querySelector('.product-row').cloneNode(true);
+
+                newRow.querySelectorAll('input').forEach(input => {
+                    if (input.name === 'product_subtotal[]') {
+                        input.value = '0.00';
+                    } else {
+                        input.value = '';
+                    }
+                });
+
+                container.appendChild(newRow);
+            });
+
+            document.getElementById('select-product-link-edit').addEventListener('click', function(e) {
+                e.preventDefault();
+
+                // Ambil baris terakhir dalam container sebagai default
+                const container = document.getElementById('product-container-edit');
+                const productRows = container.querySelectorAll('.product-row');
+                const lastRow = productRows[productRows.length - 1];
+
+                // Set ke baris terakhir (atau baris lain jika sudah Anda tentukan)
+                window.targetRow = lastRow;
+
+                // Tampilkan modal
+                const modal = new bootstrap.Modal(document.getElementById('product-modal'));
+                modal.show();
+            });
+
+
+            document.querySelector('#product-container-edit').addEventListener('click', function(e) {
+                if (e.target.classList.contains('btn-select-row-product')) {
+                    window.targetRow = e.target.closest('.product-row');
+                    const modal = new bootstrap.Modal(document.getElementById('product-modal'));
+                    modal.show();
+                }
+            });
+
         });
     </script>
     <!-- END PAGE SCRIPTS -->
