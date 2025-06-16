@@ -89,7 +89,13 @@ include(__DIR__ . "/../../config/config.php");
 
                     <div class="nav-item dropdown">
                         <a href="#" class="nav-link d-flex lh-1 p-0 px-2" data-bs-toggle="dropdown" aria-label="Open user menu">
-                            <span class="avatar avatar-sm" style="background-image: url(./../../assets/img/logo.webp)">
+                            <span class="avatar avatar-sm">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-user-circle">
+                                    <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                                    <path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" />
+                                    <path d="M12 10m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0" />
+                                    <path d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855" />
+                                </svg>
                             </span>
                             <div class="d-none d-xl-block ps-2">
                                 <div><?= isset($_SESSION['username']) ? htmlspecialchars($_SESSION['username']) : '' ?></div>
@@ -207,7 +213,13 @@ include(__DIR__ . "/../../config/config.php");
 
                     <div class="nav-item dropdown">
                         <a href="#" class="nav-link d-flex lh-1 p-0 px-2" data-bs-toggle="dropdown" aria-label="Open user menu">
-                            <span class="avatar avatar-sm" style="background-image: url(./../../assets/img/logo.webp)">
+                            <span class="avatar avatar-sm">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-user-circle">
+                                    <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                                    <path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" />
+                                    <path d="M12 10m-3 0a3 3 0 1 0 6 0a3 3 0 1 0 -6 0" />
+                                    <path d="M6.168 18.849a4 4 0 0 1 3.832 -2.849h4a4 4 0 0 1 3.834 2.855" />
+                                </svg>
                             </span>
                             <div class="d-none d-xl-block ps-2">
                                 <div><?= isset($_SESSION['username']) ? htmlspecialchars($_SESSION['username']) : '' ?></div>
@@ -278,16 +290,36 @@ include(__DIR__ . "/../../config/config.php");
                     <div class="card">
                         <div class="card-header d-flex justify-content-between align-items-center">
                             <h3 class="card-title mb-0">List of invoice recap</h3>
-                            <form method="GET" class="d-flex align-items-center" style="gap: 0.5rem;">
-                                <label for="show" class="mb-0">Show</label>
-                                <select name="show" id="show" class="form-select form-select-sm" onchange="this.form.submit()">
-                                    <option value="10" <?= (isset($_GET['show']) && $_GET['show'] == 10) ? 'selected' : '' ?>>10</option>
-                                    <option value="25" <?= (isset($_GET['show']) && $_GET['show'] == 25) ? 'selected' : '' ?>>25</option>
-                                    <option value="50" <?= (isset($_GET['show']) && $_GET['show'] == 50) ? 'selected' : '' ?>>50</option>
-                                    <option value="100" <?= (isset($_GET['show']) && $_GET['show'] == 100) ? 'selected' : '' ?>>100</option>
-                                </select>
-                                <span class="mb-0">entries</span>
-                            </form>
+                        </div>
+                        <div class="card-body border-bottom py-3">
+                            <div class="d-flex">
+                                <form method="GET" class="d-flex">
+                                    <div class="text-secondary">
+                                        Show
+                                        <div class="mx-2 d-inline-block">
+                                            <select name="per_page" class="form-control form-control-sm" onchange="this.form.submit()">
+                                                <?php
+                                                $options = [5, 10, 25, 50];
+                                                $selectedPerPage = $_GET['per_page'] ?? 10;
+                                                foreach ($options as $opt) {
+                                                    $selected = ($opt == $selectedPerPage) ? 'selected' : '';
+                                                    echo "<option value=\"$opt\" $selected>$opt</option>";
+                                                }
+                                                ?>
+                                            </select>
+                                        </div>
+                                        entries
+                                    </div>
+                                    <!-- Simpan filter sebelumnya agar tidak hilang -->
+                                    <?php
+                                    foreach ($_GET as $key => $value) {
+                                        if (!in_array($key, ['per_page', 'page'])) {
+                                            echo "<input type=\"hidden\" name=\"" . htmlspecialchars($key) . "\" value=\"" . htmlspecialchars($value) . "\">";
+                                        }
+                                    }
+                                    ?>
+                                </form>
+                            </div>
                         </div>
                         <div class="table-responsive">
                             <table class="table card-table table-vcenter text-nowrap datatable">
@@ -301,16 +333,32 @@ include(__DIR__ . "/../../config/config.php");
                                 </thead>
                                 <tbody>
                                     <?php
+                                    $perPage = isset($_GET['per_page']) ? (int) $_GET['per_page'] : 10;
+                                    $page = isset($_GET['page']) ? (int) $_GET['page'] : 1;
+                                    $offset = ($page - 1) * $perPage;
+                                    $totalQuery = "
+                                                    SELECT COUNT(*) as total FROM (
+                                                        SELECT customers.id, DATE_FORMAT(invoices.invoice_date, '%Y-%m') AS bulan
+                                                        FROM invoices
+                                                        JOIN customers ON invoices.customer_id = customers.id
+                                                        GROUP BY customers.id, DATE_FORMAT(invoices.invoice_date, '%Y-%m')
+                                                    ) AS grouped_data
+                                                ";
+
+                                    $totalResult = mysqli_query($mysqli, $totalQuery);
+                                    $totalData = mysqli_fetch_assoc($totalResult)['total'];
+                                    $totalPages = ceil($totalData / $perPage);
+
                                     $no = 1;
                                     $sql = "SELECT 
-                                                customers.name AS customer_name,
-                                                DATE_FORMAT(invoices.invoice_date, '%Y-%m') AS bulan,
-                                                SUM(invoices.subtotal) AS total
-                                            FROM invoices
-                                            JOIN customers ON invoices.customer_id = customers.id
-                                            GROUP BY customers.id, DATE_FORMAT(invoices.invoice_date, '%Y-%m')
-                                            ORDER BY bulan ASC, customer_name ASC
-                                        ";
+            customers.name AS customer_name,
+            DATE_FORMAT(invoices.invoice_date, '%Y-%m') AS bulan,
+            SUM(invoices.subtotal) AS total
+        FROM invoices
+        JOIN customers ON invoices.customer_id = customers.id
+        GROUP BY customers.id, DATE_FORMAT(invoices.invoice_date, '%Y-%m')
+        ORDER BY bulan ASC, customer_name ASC
+        LIMIT $perPage OFFSET $offset";
 
                                     $result = mysqli_query($mysqli, $sql);
                                     while ($row = mysqli_fetch_assoc($result)) {
@@ -326,6 +374,53 @@ include(__DIR__ . "/../../config/config.php");
                                     <?php } ?>
                                 </tbody>
                             </table>
+                        </div>
+                        <div class="card-footer">
+                            <div class="row g-2 justify-content-center justify-content-sm-between">
+                                <div class="col-auto d-flex align-items-center">
+                                    <?php
+                                    $startEntry = $offset + 1;
+                                    $endEntry = min($offset + $perPage, $totalData);
+                                    ?>
+                                    <!-- <p class="m-0 text-secondary">
+                                        Showing <strong><?= $startEntry; ?> to <?= $endEntry; ?></strong> of <strong><?= $totalData; ?> entries</strong>
+                                    </p> -->
+                                </div>
+                                <div class="col-auto">
+                                    <?php if ($totalPages > 1): ?>
+                                        <ul class="pagination m-0 ms-auto">
+                                            <?php if ($page > 1): ?>
+                                                <li class="page-item">
+                                                    <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $page - 1])) ?>">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" class="icon icon-tabler icons-tabler-filled icon-tabler-caret-left">
+                                                            <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                                                            <path d="M13.883 5.007l.058 -.005h.118l.058 .005l.06 .009l.052 .01l.108 .032l.067 .027l.132 .07l.09 .065l.081 .073l.083 .094l.054 .077l.054 .096l.017 .036l.027 .067l.032 .108l.01 .053l.01 .06l.004 .057l.002 .059v12c0 .852 -.986 1.297 -1.623 .783l-.084 -.076l-6 -6a1 1 0 0 1 -.083 -1.32l.083 -.094l6 -6l.094 -.083l.077 -.054l.096 -.054l.036 -.017l.067 -.027l.108 -.032l.053 -.01l.06 -.01z" />
+                                                        </svg>
+                                                    </a>
+                                                </li>
+                                            <?php endif; ?>
+
+                                            <?php for ($i = 1; $i <= $totalPages; $i++): ?>
+                                                <li class="page-item <?= ($page == $i) ? 'active' : '' ?>">
+                                                    <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $i])) ?>"><?= $i ?></a>
+                                                </li>
+                                            <?php endfor; ?>
+
+                                            <?php if ($page < $totalPages): ?>
+                                                <li class="page-item">
+                                                    <a class="page-link" href="?<?= http_build_query(array_merge($_GET, ['page' => $page + 1])) ?>">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" class="icon icon-tabler icons-tabler-filled icon-tabler-caret-right">
+                                                            <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                                                            <path d="M9 6c0 -.852 .986 -1.297 1.623 -.783l.084 .076l6 6a1 1 0 0 1 .083 1.32l-.083 .094l-6 6l-.094 .083l-.077 .054l-.096 .054l-.036 .017l-.067 .027l-.108 .032l-.053 .01l-.06 .01l-.057 .004l-.059 .002l-.059 -.002l-.058 -.005l-.06 -.009l-.052 -.01l-.108 -.032l-.067 -.027l-.132 -.07l-.09 -.065l-.081 -.073l-.083 -.094l-.054 -.077l-.054 -.096l-.017 -.036l-.027 -.067l-.032 -.108l-.01 -.053l-.01 -.06l-.004 -.057l-.002 -12.059z" />
+                                                        </svg>
+                                                    </a>
+                                                </li>
+                                            <?php endif; ?>
+                                        </ul>
+                                    <?php endif; ?>
+                                    </ul>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -370,102 +465,6 @@ include(__DIR__ . "/../../config/config.php");
             <!--  END FOOTER  -->
         </div>
     </div>
-
-    <!-- BEGIN PAGE MODALS -->
-    <form action="store_invoice.php" method="POST">
-        <div class="modal modal-blur fade" id="modal-report" tabindex="-1" role="dialog" aria-hidden="true">
-            <div class="modal-dialog modal-lg" role="document">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title">New Invoice</h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                    </div>
-                    <div class="modal-body">
-                        <div class="mb-3">
-                            <label class="form-label">Invoice Id</label>
-                            <input type="text" class="form-control" name="invoice_id" value="<?= htmlspecialchars($new_invoice_id) ?>" readonly>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Invoice Date</label>
-                            <input type="date" class="form-control" name="invoice_date">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Status</label>
-                            <div class="form-selectgroup-boxes row mb-3">
-                                <div class="col-lg-6">
-                                    <label class="form-selectgroup-item">
-                                        <input type="radio" name="report-type" value="Kasbon" class="form-selectgroup-input" checked>
-                                        <span class="form-selectgroup-label d-flex align-items-center p-3">
-                                            <span class="me-3">
-                                                <span class="form-selectgroup-check"></span>
-                                            </span>
-                                            <span class="form-selectgroup-label-content">
-                                                <span class="form-selectgroup-title strong mb-1">Kasbon</span>
-                                            </span>
-                                        </span>
-                                    </label>
-                                </div>
-                                <div class="col-lg-6">
-                                    <label class="form-selectgroup-item">
-                                        <input type="radio" name="report-type" value="Transfer" class="form-selectgroup-input">
-                                        <span class="form-selectgroup-label d-flex align-items-center p-3">
-                                            <span class="me-3">
-                                                <span class="form-selectgroup-check"></span>
-                                            </span>
-                                            <span class="form-selectgroup-label-content">
-                                                <span class="form-selectgroup-title strong mb-1">Transfer</span>
-                                            </span>
-                                        </span>
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Customer</label>
-                            <select name="customer_id" class="form-select" required>
-                                <option value="" disabled selected>-- Select Customer --</option>
-                                <?php foreach ($customers as $customer): ?>
-                                    <option value="<?= htmlspecialchars($customer['id']) ?>">
-                                        <?= htmlspecialchars($customer['name']) ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label">Products</label>
-                            <div id="product-container">
-                                <div class="row g-2 product-row mb-2">
-                                    <div class="col-md-4">
-                                        <input type="text" class="form-control" name="product_name[]" placeholder="Product Name" required>
-                                    </div>
-                                    <div class="col-md-2">
-                                        <input type="number" class="form-control" name="product_qty[]" placeholder="Qty" min="1" required>
-                                    </div>
-                                    <div class="col-md-3">
-                                        <input type="number" class="form-control" name="product_price[]" placeholder="Price" min="0" step="0.01" required>
-                                    </div>
-                                    <div class="col-md-3">
-                                        <input type="number" class="form-control" name="product_subtotal[]" placeholder="Subtotal" readonly>
-                                    </div>
-                                </div>
-                            </div>
-                            <button type="button" id="add-product" class="btn btn-sm btn-outline-primary mt-2">Add Product</button>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <a href="#" class="btn btn-link link-secondary" data-bs-dismiss="modal">
-                            Cancel
-                        </a>
-                        <button type="submit" class="btn btn-primary ms-auto">
-                            Save
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </form>
-    <!-- END PAGE MODALS -->
 
     <div class="settings">
         <a href="#" class="btn btn-floating btn-icon btn-primary" data-bs-toggle="offcanvas" data-bs-target="#offcanvasSettings" aria-controls="offcanvasSettings" aria-label="Theme Builder">

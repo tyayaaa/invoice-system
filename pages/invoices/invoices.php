@@ -373,12 +373,12 @@ while ($row = $productResult->fetch_assoc()) {
             $invoice_date = $_GET['invoice_date'] ?? '';
             $status = $_GET['status'] ?? '';
             $search = $_GET['search'] ?? '';
-            $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
-            $allowedPerPage = [5, 10, 25, 50];
-            $perPage = isset($_GET['per_page']) && in_array((int) $_GET['per_page'], $allowedPerPage) ? (int) $_GET['per_page'] : 10;
+
+            $perPage = isset($_GET['per_page']) ? (int) $_GET['per_page'] : 10;
+            $page = isset($_GET['page']) ? (int) $_GET['page'] : 1;
             $offset = ($page - 1) * $perPage;
 
-            // Untuk filter
+            // Siapkan filter WHERE
             $where = [];
             if (!empty($invoice_date)) {
                 $where[] = "DATE(i.invoice_date) = '" . mysqli_real_escape_string($mysqli, $invoice_date) . "'";
@@ -390,58 +390,76 @@ while ($row = $productResult->fetch_assoc()) {
                 $search = mysqli_real_escape_string($mysqli, $search);
                 $where[] = "(i.invoice_id LIKE '%$search%' OR c.name LIKE '%$search%')";
             }
-
             $whereSql = count($where) > 0 ? "WHERE " . implode(" AND ", $where) : "";
 
-            $totalSql = "SELECT COUNT(DISTINCT i.id) as total FROM invoices i 
-                LEFT JOIN customers c ON i.customer_id = c.id 
-                $whereSql";
+            // 1. Hitung total invoice unik
+            $totalSql = "SELECT COUNT(DISTINCT i.id) as total 
+    FROM invoices i 
+    LEFT JOIN customers c ON i.customer_id = c.id 
+    $whereSql";
             $totalResult = mysqli_query($mysqli, $totalSql);
             $totalData = mysqli_fetch_assoc($totalResult)['total'];
             $totalPages = ceil($totalData / $perPage);
 
-            $sql = "SELECT 
-            i.id, i.invoice_id, i.invoice_date, i.status, i.customer_id,
-            c.name AS customer_name,
-            ii.product_name, ii.qty, ii.price, ii.subtotal
-        FROM invoices i
-        LEFT JOIN customers c ON i.customer_id = c.id
-        LEFT JOIN invoice_items ii ON i.id = ii.invoice_id
-        $whereSql
-        ORDER BY i.id DESC
-        LIMIT $perPage OFFSET $offset";
+            // 2. Ambil id invoice unik sesuai pagination
+            $idSql = "SELECT DISTINCT i.id 
+    FROM invoices i 
+    LEFT JOIN customers c ON i.customer_id = c.id 
+    $whereSql 
+    ORDER BY i.id ASC 
+    LIMIT $perPage OFFSET $offset";
+            $idResult = mysqli_query($mysqli, $idSql);
 
-            $result = mysqli_query($mysqli, $sql);
-
-            $invoices = [];
-            while ($row = mysqli_fetch_assoc($result)) {
-                $invoice_id = $row['id'];
-                if (!isset($invoices[$invoice_id])) {
-                    $invoices[$invoice_id] = [
-                        'id' => $row['id'],
-                        'invoice_id' => $row['invoice_id'],
-                        'invoice_date' => $row['invoice_date'],
-                        'customer_id' => $row['customer_id'],
-                        'customer_name' => $row['customer_name'],
-                        'status' => $row['status'],
-                        'items' => [],
-                    ];
-                }
-                if (
-                    isset($row['product_name']) &&
-                    isset($row['qty']) &&
-                    isset($row['price']) &&
-                    isset($row['subtotal'])
-                ) {
-                    $invoices[$invoice_id]['items'][] = [
-                        'name' => $row['product_name'],
-                        'qty' => $row['qty'],
-                        'price' => $row['price'],
-                        'subtotal' => $row['subtotal'],
-                    ];
-                }
+            $invoiceIds = [];
+            while ($row = mysqli_fetch_assoc($idResult)) {
+                $invoiceIds[] = $row['id'];
             }
 
+            // 3. Ambil detail invoice dan items jika ada ID
+            $invoices = [];
+            if (!empty($invoiceIds)) {
+                $idList = implode(',', $invoiceIds);
+                $sql = "SELECT 
+                i.id, i.invoice_id, i.invoice_date, i.status, i.customer_id,
+                c.name AS customer_name,
+                ii.product_name, ii.qty, ii.price, ii.subtotal
+            FROM invoices i
+            LEFT JOIN customers c ON i.customer_id = c.id
+            LEFT JOIN invoice_items ii ON i.id = ii.invoice_id
+            WHERE i.id IN ($idList)
+            ORDER BY i.id ASC";
+
+                $result = mysqli_query($mysqli, $sql);
+
+                while ($row = mysqli_fetch_assoc($result)) {
+                    $invoice_id = $row['id'];
+                    if (!isset($invoices[$invoice_id])) {
+                        $invoices[$invoice_id] = [
+                            'id' => $row['id'],
+                            'invoice_id' => $row['invoice_id'],
+                            'invoice_date' => $row['invoice_date'],
+                            'customer_id' => $row['customer_id'],
+                            'customer_name' => $row['customer_name'],
+                            'status' => $row['status'],
+                            'items' => [],
+                        ];
+                    }
+
+                    if (
+                        isset($row['product_name']) &&
+                        isset($row['qty']) &&
+                        isset($row['price']) &&
+                        isset($row['subtotal'])
+                    ) {
+                        $invoices[$invoice_id]['items'][] = [
+                            'name' => $row['product_name'],
+                            'qty' => $row['qty'],
+                            'price' => $row['price'],
+                            'subtotal' => $row['subtotal'],
+                        ];
+                    }
+                }
+            }
             ?>
 
             <div class="page-wrapper">
@@ -533,74 +551,6 @@ while ($row = $productResult->fetch_assoc()) {
                                     </thead>
                                     <tbody>
                                         <?php
-                                        $perPage = isset($_GET['per_page']) ? (int) $_GET['per_page'] : 10;
-                                        $page = isset($_GET['page']) ? (int) $_GET['page'] : 1;
-                                        $offset = ($page - 1) * $perPage;
-
-                                        // Query total invoice untuk pagination
-                                        $totalQuery = "SELECT COUNT(*) AS total FROM invoices";
-                                        $totalResult = mysqli_query($mysqli, $totalQuery);
-                                        $totalData = mysqli_fetch_assoc($totalResult)['total'];
-                                        $totalPages = ceil($totalData / $perPage);
-
-                                        // Ambil ID invoice saja (dengan LIMIT dan OFFSET)
-                                        $invoiceIds = [];
-                                        $sql_invoice_ids = "SELECT id FROM invoices ORDER BY id ASC LIMIT $perPage OFFSET $offset";
-                                        $result_invoice_ids = mysqli_query($mysqli, $sql_invoice_ids);
-                                        while ($row = mysqli_fetch_assoc($result_invoice_ids)) {
-                                            $invoiceIds[] = $row['id'];
-                                        }
-
-                                        $invoices = [];
-
-                                        if (!empty($invoiceIds)) {
-                                            $idStr = implode(',', $invoiceIds);
-
-                                            // Ambil detail lengkap berdasarkan invoice_id yang sudah difilter
-                                            $sql = "SELECT 
-                                                        i.id, i.invoice_id, i.invoice_date, i.status, i.customer_id,
-                                                        c.name AS customer_name,
-                                                        ii.product_name, ii.qty, ii.price, ii.subtotal
-                                                    FROM invoices i
-                                                    LEFT JOIN customers c ON i.customer_id = c.id
-                                                    LEFT JOIN invoice_items ii ON i.id = ii.invoice_id
-                                                    WHERE i.id IN ($idStr)
-                                                    ORDER BY i.id ASC";
-
-                                            $result = mysqli_query($mysqli, $sql);
-
-                                            while ($row = mysqli_fetch_assoc($result)) {
-                                                $invoice_id = $row['id'];
-
-                                                if (!isset($invoices[$invoice_id])) {
-                                                    $invoices[$invoice_id] = [
-                                                        'id' => $row['id'],
-                                                        'invoice_id' => $row['invoice_id'],
-                                                        'invoice_date' => $row['invoice_date'],
-                                                        'customer_id' => $row['customer_id'],
-                                                        'customer_name' => $row['customer_name'],
-                                                        'status' => $row['status'],
-                                                        'items' => [],
-                                                    ];
-                                                }
-
-                                                // Tambah item jika ada data
-                                                if (
-                                                    isset($row['product_name']) &&
-                                                    isset($row['qty']) &&
-                                                    isset($row['price']) &&
-                                                    isset($row['subtotal'])
-                                                ) {
-                                                    $invoices[$invoice_id]['items'][] = [
-                                                        'name' => $row['product_name'],
-                                                        'qty' => $row['qty'],
-                                                        'price' => $row['price'],
-                                                        'subtotal' => $row['subtotal'],
-                                                    ];
-                                                }
-                                            }
-                                        }
-
                                         // Tampilkan data ke tabel
                                         $no = 1;
                                         foreach ($invoices as $inv) {
