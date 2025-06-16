@@ -306,7 +306,6 @@ while ($row = $productResult->fetch_assoc()) {
                                     View Invoice Recap
                                 </a>
                                 <a href="#" class="btn btn-primary btn-5 d-none d-sm-inline-block" data-bs-toggle="modal" data-bs-target="#modal-report">
-                                    <!-- Download SVG icon from http://tabler.io/icons/icon/plus -->
                                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-circle-dashed-plus">
                                         <path stroke="none" d="M0 0h24v24H0z" fill="none" />
                                         <path d="M8.56 3.69a9 9 0 0 0 -2.92 1.95" />
@@ -605,10 +604,6 @@ while ($row = $productResult->fetch_assoc()) {
                                                 <td>
                                                     <a href="#" class="btn btn-sm btn-purple btn-edit-invoice"
                                                         data-id="<?= $inv['id']; ?>"
-                                                        data-invoice-id="<?= $inv['invoice_id']; ?>"
-                                                        data-invoice-date="<?= $inv['invoice_date']; ?>"
-                                                        data-status="<?= $inv['status']; ?>"
-                                                        data-customer-id="<?= $inv['customer_id']; ?>"
                                                         data-bs-toggle="modal"
                                                         data-bs-target="#modal-edit-invoice">
                                                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="icon icon-tabler icons-tabler-outline icon-tabler-edit">
@@ -791,7 +786,7 @@ while ($row = $productResult->fetch_assoc()) {
                         <div class="mb-3">
                             <label class="form-label">Products</label>
                             or <a href="#" class="small text-primary" id="select-product-link">Select a Product</a>
-                            <div id="product-container">
+                            <div id="product-container-add">
                                 <div class="row g-2 product-row mb-2">
                                     <div class="col-md-4">
                                         <input type="text" class="form-control" name="product_name[]" placeholder="Product Name" required>
@@ -825,7 +820,6 @@ while ($row = $productResult->fetch_assoc()) {
     <!-- END MODAL ADD INVOICE -->
 
     <!-- MODAL PRODUCT LIST -->
-    <!-- Modal untuk memilih produk -->
     <div class="modal fade" id="product-modal" tabindex="-1" role="dialog" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
             <div class="modal-content">
@@ -920,6 +914,27 @@ while ($row = $productResult->fetch_assoc()) {
                                 </option>
                             <?php endforeach; ?>
                         </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Products</label>
+                        or <a href="#" class="small text-primary" id="select-product-link">Select a Product</a>
+                        <div id="product-container-edit">
+                            <div class="row g-2 product-row mb-2">
+                                <div class="col-md-4">
+                                    <input type="text" class="form-control" name="product_name[]" placeholder="Product Name" required>
+                                </div>
+                                <div class="col-md-2">
+                                    <input type="number" class="form-control" name="product_qty[]" placeholder="Qty" min="1" required>
+                                </div>
+                                <div class="col-md-3">
+                                    <input type="number" class="form-control" name="product_price[]" placeholder="Price" min="0" step="0.01" required>
+                                </div>
+                                <div class="col-md-3">
+                                    <input type="number" class="form-control" name="product_subtotal[]" placeholder="Subtotal" readonly>
+                                </div>
+                            </div>
+                        </div>
+                        <button type="button" id="add-product" class="btn btn-sm btn-outline-primary mt-2">Add Product</button>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -1183,6 +1198,56 @@ while ($row = $productResult->fetch_assoc()) {
     </script>
 
     <script>
+        document.querySelectorAll('.btn-edit-invoice').forEach(button => {
+            button.addEventListener('click', async function() {
+                const id = this.dataset.id;
+
+                // Tunda sedikit supaya modal muncul dulu
+                setTimeout(async () => {
+                    try {
+                        const response = await fetch(`get_invoice_data.php?id=${id}`);
+                        const data = await response.json();
+
+                        document.getElementById('edit-id').value = id;
+                        document.getElementById('edit-invoice-id').value = data.invoice_id;
+                        document.getElementById('edit-date').value = data.invoice_date;
+                        document.getElementById('edit-customer').value = data.customer_id;
+                        document.getElementById('status-kasbon').checked = data.status === 'Kasbon';
+                        document.getElementById('status-transfer').checked = data.status === 'Transfer';
+
+                        const productContainer = document.querySelector('#product-container-edit');
+                        console.log('Container ditemukan?', productContainer);
+                        productContainer.innerHTML = '';
+
+                        data.items.forEach(item => {
+                            const row = document.createElement('div');
+                            row.className = 'row g-2 product-row mb-2';
+                            row.innerHTML = `
+                        <div class="col-md-4">
+                            <input type="text" class="form-control" name="product_name[]" value="${item.product_name}" required>
+                        </div>
+                        <div class="col-md-2">
+                            <input type="number" class="form-control" name="product_qty[]" value="${item.qty}" required>
+                        </div>
+                        <div class="col-md-3">
+                            <input type="number" class="form-control" name="product_price[]" value="${item.price}" step="0.01" required>
+                        </div>
+                        <div class="col-md-3">
+                            <input type="number" class="form-control" name="product_subtotal[]" value="${item.subtotal}" readonly>
+                        </div>`;
+                            productContainer.appendChild(row);
+                            console.log('Product container setelah append:', productContainer.innerHTML);
+                        });
+
+                    } catch (err) {
+                        console.error('Gagal memuat data invoice:', err);
+                    }
+                }, 200); // tunda 200ms agar modal muncul dulu
+            });
+        });
+    </script>
+
+    <script>
         document.addEventListener('DOMContentLoaded', function() {
             const deleteButtons = document.querySelectorAll('.btn-delete-invoice');
 
@@ -1192,23 +1257,6 @@ while ($row = $productResult->fetch_assoc()) {
                     if (!confirmed) {
                         e.preventDefault(); // batalkan jika tidak yakin
                     }
-                });
-            });
-
-            const editButtons = document.querySelectorAll('.btn-edit-invoice');
-
-            editButtons.forEach(button => {
-                button.addEventListener('click', function() {
-                    document.getElementById('edit-id').value = this.dataset.id;
-                    document.getElementById('edit-invoice-id').value = this.dataset.invoiceId;
-                    document.getElementById('edit-date').value = this.dataset.invoiceDate;
-                    document.getElementById('edit-customer').value = this.dataset.customerId;
-
-                    // Set radio button status
-                    const status = this.dataset.status;
-                    document.querySelectorAll('input[name="status"]').forEach(radio => {
-                        radio.checked = radio.value === status;
-                    });
                 });
             });
 
@@ -1227,7 +1275,7 @@ while ($row = $productResult->fetch_assoc()) {
             }
 
             // Event delegation untuk input qty dan price agar hitung subtotal saat diubah
-            document.getElementById('product-container').addEventListener('input', e => {
+            document.getElementById('product-container-add').addEventListener('input', e => {
                 if (
                     e.target.name === 'product_qty[]' ||
                     e.target.name === 'product_price[]'
@@ -1238,7 +1286,7 @@ while ($row = $productResult->fetch_assoc()) {
 
             // Tambah row produk baru
             document.getElementById('add-product').addEventListener('click', () => {
-                const container = document.getElementById('product-container');
+                const container = document.getElementById('product-container-add');
                 const newRow = document.querySelector('.product-row').cloneNode(true);
 
                 // Clear input values
