@@ -275,6 +275,97 @@ include(__DIR__ . "/../../config/config.php");
             <!-- END PAGE HEADER -->
 
             <!-- BEGIN PAGE BODY -->
+            <?php
+            $bulan = $_GET['bulan'] ?? '';
+            $customer_id = $_GET['customer_id'] ?? '';
+
+            $search = $_GET['search'] ?? '';
+
+            $perPage = isset($_GET['per_page']) ? (int) $_GET['per_page'] : 10;
+            $page = isset($_GET['page']) ? (int) $_GET['page'] : 1;
+            $offset = ($page - 1) * $perPage;
+
+            // Siapkan filter WHERE
+            $where = [];
+            if (!empty($bulan)) {
+                $bulanEscaped = mysqli_real_escape_string($mysqli, $bulan);
+                $where[] = "DATE_FORMAT(i.invoice_date, '%Y-%m') = '$bulanEscaped'";
+            }
+            if (!empty($customer_id)) {
+                $customerEscaped = mysqli_real_escape_string($mysqli, $customer_id);
+                $where[] = "i.customer_id = '$customerEscaped'";
+            }
+            $whereSql = count($where) > 0 ? "WHERE " . implode(" AND ", $where) : "";
+
+            // 1. Hitung total invoice unik
+            $totalSql = "SELECT COUNT(DISTINCT i.id) as total 
+    FROM invoices i 
+    LEFT JOIN customers c ON i.customer_id = c.id 
+    $whereSql";
+            $totalResult = mysqli_query($mysqli, $totalSql);
+            $totalData = mysqli_fetch_assoc($totalResult)['total'];
+            $totalPages = ceil($totalData / $perPage);
+
+            // 2. Ambil id invoice unik sesuai pagination
+            $idSql = "SELECT DISTINCT i.id 
+    FROM invoices i 
+    LEFT JOIN customers c ON i.customer_id = c.id 
+    $whereSql 
+    ORDER BY i.id ASC 
+    LIMIT $perPage OFFSET $offset";
+            $idResult = mysqli_query($mysqli, $idSql);
+
+            $invoiceIds = [];
+            while ($row = mysqli_fetch_assoc($idResult)) {
+                $invoiceIds[] = $row['id'];
+            }
+
+            // 3. Ambil detail invoice dan items jika ada ID
+            $invoices = [];
+            if (!empty($invoiceIds)) {
+                $idList = implode(',', $invoiceIds);
+                $sql = "SELECT 
+                i.id, i.invoice_id, i.invoice_date, i.status, i.customer_id,
+                c.name AS customer_name,
+                ii.product_name, ii.qty, ii.price, ii.subtotal
+            FROM invoices i
+            LEFT JOIN customers c ON i.customer_id = c.id
+            LEFT JOIN invoice_items ii ON i.id = ii.invoice_id
+            WHERE i.id IN ($idList)
+            ORDER BY i.id ASC";
+
+                $result = mysqli_query($mysqli, $sql);
+
+                while ($row = mysqli_fetch_assoc($result)) {
+                    $invoice_id = $row['id'];
+                    if (!isset($invoices[$invoice_id])) {
+                        $invoices[$invoice_id] = [
+                            'id' => $row['id'],
+                            'invoice_id' => $row['invoice_id'],
+                            'invoice_date' => $row['invoice_date'],
+                            'customer_id' => $row['customer_id'],
+                            'customer_name' => $row['customer_name'],
+                            'status' => $row['status'],
+                            'items' => [],
+                        ];
+                    }
+
+                    if (
+                        isset($row['product_name']) &&
+                        isset($row['qty']) &&
+                        isset($row['price']) &&
+                        isset($row['subtotal'])
+                    ) {
+                        $invoices[$invoice_id]['items'][] = [
+                            'name' => $row['product_name'],
+                            'qty' => $row['qty'],
+                            'price' => $row['price'],
+                            'subtotal' => $row['subtotal'],
+                        ];
+                    }
+                }
+            }
+            ?>
             <div class="page-wrapper">
                 <div class="container-xl">
                     <!-- Page title -->
@@ -290,6 +381,35 @@ include(__DIR__ . "/../../config/config.php");
                     <div class="card">
                         <div class="card-header d-flex justify-content-between align-items-center">
                             <h3 class="card-title mb-0">List of invoice recap</h3>
+                            <!-- Filter Form -->
+                            <div class="ms-auto">
+                                <form method="GET" class="d-flex flex-wrap align-items-end gap-3">
+                                    <div class="form-group">
+                                        <label for="bulan" class="form-label mb-1">Bulan</label>
+                                        <input type="month" name="bulan" id="bulan" class="form-control form-control-sm"
+                                            value="<?= $_GET['bulan'] ?? '' ?>">
+                                    </div>
+
+                                    <div class="form-group">
+                                        <label for="customer_id" class="form-label mb-1">Customer</label>
+                                        <select name="customer_id" id="customer_id" class="form-select form-select-sm">
+                                            <option value="">Semua</option>
+                                            <?php
+                                            $customerQuery = mysqli_query($mysqli, "SELECT id, name FROM customers ORDER BY name ASC");
+                                            while ($cust = mysqli_fetch_assoc($customerQuery)) {
+                                                $selected = ($_GET['customer_id'] ?? '') == $cust['id'] ? 'selected' : '';
+                                                echo "<option value=\"{$cust['id']}\" $selected>{$cust['name']}</option>";
+                                            }
+                                            ?>
+                                        </select>
+                                    </div>
+
+                                    <div class="form-group d-flex gap-1">
+                                        <button type="submit" class="btn btn-sm btn-primary">Filter</button>
+                                        <a href="invoices.php" class="btn btn-sm btn-secondary">Reset</a>
+                                    </div>
+                                </form>
+                            </div>
                         </div>
                         <div class="card-body border-bottom py-3">
                             <div class="d-flex">
@@ -338,10 +458,11 @@ include(__DIR__ . "/../../config/config.php");
                                     $offset = ($page - 1) * $perPage;
                                     $totalQuery = "
                                                     SELECT COUNT(*) as total FROM (
-                                                        SELECT customers.id, DATE_FORMAT(invoices.invoice_date, '%Y-%m') AS bulan
-                                                        FROM invoices
-                                                        JOIN customers ON invoices.customer_id = customers.id
-                                                        GROUP BY customers.id, DATE_FORMAT(invoices.invoice_date, '%Y-%m')
+                                                        SELECT customers.id, DATE_FORMAT(i.invoice_date, '%Y-%m') AS bulan
+                                                        FROM invoices i
+                                                        JOIN customers ON i.customer_id = customers.id
+                                                        $whereSql
+                                                        GROUP BY customers.id, DATE_FORMAT(i.invoice_date, '%Y-%m')
                                                     ) AS grouped_data
                                                 ";
 
@@ -351,14 +472,15 @@ include(__DIR__ . "/../../config/config.php");
 
                                     $no = 1;
                                     $sql = "SELECT 
-            customers.name AS customer_name,
-            DATE_FORMAT(invoices.invoice_date, '%Y-%m') AS bulan,
-            SUM(invoices.subtotal) AS total
-        FROM invoices
-        JOIN customers ON invoices.customer_id = customers.id
-        GROUP BY customers.id, DATE_FORMAT(invoices.invoice_date, '%Y-%m')
-        ORDER BY bulan ASC, customer_name ASC
-        LIMIT $perPage OFFSET $offset";
+                                            customers.name AS customer_name,
+                                            DATE_FORMAT(i.invoice_date, '%Y-%m') AS bulan,
+                                            SUM(i.subtotal) AS total
+                                        FROM invoices i
+                                        JOIN customers ON i.customer_id = customers.id
+                                        $whereSql
+                                        GROUP BY customers.id, DATE_FORMAT(i.invoice_date, '%Y-%m')
+                                        ORDER BY bulan ASC, customer_name ASC
+                                        LIMIT $perPage OFFSET $offset";
 
                                     $result = mysqli_query($mysqli, $sql);
                                     while ($row = mysqli_fetch_assoc($result)) {
