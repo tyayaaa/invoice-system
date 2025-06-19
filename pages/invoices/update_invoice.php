@@ -16,10 +16,20 @@ if (
     $query = "UPDATE invoices SET invoice_date = '$invoice_date', customer_id = $customer_id, status = '$status' WHERE id = $id";
     mysqli_query($mysqli, $query);
 
-    // Hapus item lama dulu
+    // Ambil data item lama untuk mengembalikan stok
+    $oldItems = mysqli_query($mysqli, "SELECT product_name, qty FROM invoice_items WHERE invoice_id = $id");
+    while ($item = mysqli_fetch_assoc($oldItems)) {
+        $productName = mysqli_real_escape_string($mysqli, $item['product_name']);
+        $oldQty = intval($item['qty']);
+
+        // Kembalikan stok produk
+        mysqli_query($mysqli, "UPDATE products SET qty = qty + $oldQty WHERE product_name = '$productName'");
+    }
+
+    // Hapus item lama
     mysqli_query($mysqli, "DELETE FROM invoice_items WHERE invoice_id = $id");
 
-    // Tambah item baru
+    // Tambah item baru dan update stok
     if (isset($_POST['product_name'], $_POST['product_qty'], $_POST['product_price'])) {
         $names = $_POST['product_name'];
         $qtys = $_POST['product_qty'];
@@ -31,12 +41,16 @@ if (
             $price = floatval($prices[$i]);
             $subtotal = $qty * $price;
 
+            // Tambahkan item ke invoice
             $insert = "INSERT INTO invoice_items (invoice_id, product_name, qty, price, subtotal) 
-                VALUES ($id, '$name', $qty, $price, $subtotal)";
+            VALUES ($id, '$name', $qty, $price, $subtotal)";
             mysqli_query($mysqli, $insert);
+
+            // Kurangi stok produk
+            mysqli_query($mysqli, "UPDATE products SET qty = qty - $qty WHERE product_name = '$name'");
         }
 
-        // Tambahkan perhitungan subtotal dan update ke invoices
+        // Hitung subtotal total
         $result = mysqli_query($mysqli, "SELECT SUM(subtotal) AS total FROM invoice_items WHERE invoice_id = $id");
         $row = mysqli_fetch_assoc($result);
         $total_subtotal = $row['total'] ?? 0;
