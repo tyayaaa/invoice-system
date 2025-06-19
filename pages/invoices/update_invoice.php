@@ -35,6 +35,13 @@ if (
                 VALUES ($id, '$name', $qty, $price, $subtotal)";
             mysqli_query($mysqli, $insert);
         }
+
+        // Tambahkan perhitungan subtotal dan update ke invoices
+        $result = mysqli_query($mysqli, "SELECT SUM(subtotal) AS total FROM invoice_items WHERE invoice_id = $id");
+        $row = mysqli_fetch_assoc($result);
+        $total_subtotal = $row['total'] ?? 0;
+
+        mysqli_query($mysqli, "UPDATE invoices SET subtotal = $total_subtotal WHERE id = $id");
     }
 
     header("Location: invoices.php?update=success");
