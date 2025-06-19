@@ -1172,6 +1172,40 @@ while ($row = $productResult->fetch_assoc()) {
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            // Simpan referensi modal aktif sebelum buka product-modal
+            let activeModal = null;
+
+            function openProductModal(fromModalId, targetRow) {
+                // Simpan modal asal
+                activeModal = new bootstrap.Modal(document.getElementById(fromModalId));
+                // Sembunyikan modal asal
+                document.getElementById(fromModalId).classList.remove('show');
+                document.getElementById(fromModalId).style.display = 'none';
+                document.body.classList.remove('modal-open');
+
+                // Simpan row target secara global
+                window.targetRow = targetRow;
+
+                // Tampilkan product modal
+                const productModal = new bootstrap.Modal(document.getElementById('product-modal'), {
+                    backdrop: 'static' // agar backdrop tetap stabil
+                });
+                productModal.show();
+            }
+
+            // Saat product-modal ditutup (tanpa pilih produk pun), kembalikan modal asal
+            document.getElementById('product-modal').addEventListener('hidden.bs.modal', function() {
+                if (activeModal) {
+                    // Tampilkan kembali modal asal
+                    const modalElement = activeModal._element;
+                    modalElement.style.display = 'block';
+                    modalElement.classList.add('show');
+                    document.body.classList.add('modal-open');
+
+                    // Reset activeModal jika perlu
+                    activeModal = null;
+                }
+            });
 
             const deleteButtons = document.querySelectorAll('.btn-delete-invoice');
 
@@ -1234,11 +1268,10 @@ while ($row = $productResult->fetch_assoc()) {
             // Saat klik "Select a Product"
             document.getElementById('select-product-link').addEventListener('click', function(e) {
                 e.preventDefault();
-                // Simpan baris produk terakhir yang aktif
-                window.targetRow = document.querySelector('.product-row:last-child');
-                const modal = new bootstrap.Modal(document.getElementById('product-modal'));
-                modal.show();
+                const lastRow = document.querySelector('#product-container-add .product-row:last-child');
+                openProductModal('modal-report', lastRow);
             });
+
 
             // Saat pilih produk dari modal
             document.querySelectorAll('.btn-select-product').forEach(button => {
@@ -1253,8 +1286,17 @@ while ($row = $productResult->fetch_assoc()) {
                         window.targetRow.querySelector('input[name="product_subtotal[]"]').value = productPrice;
                     }
 
-                    // Tutup modal
+                    // Tutup product-modal
                     bootstrap.Modal.getInstance(document.getElementById('product-modal')).hide();
+
+                    // Tampilkan kembali modal asal
+                    setTimeout(() => {
+                        if (activeModal) {
+                            document.getElementById(activeModal._element.id).style.display = 'block';
+                            document.body.classList.add('modal-open');
+                            document.getElementById(activeModal._element.id).classList.add('show');
+                        }
+                    }, 300);
                 });
             });
 
@@ -1363,18 +1405,8 @@ while ($row = $productResult->fetch_assoc()) {
 
             document.getElementById('select-product-link-edit').addEventListener('click', function(e) {
                 e.preventDefault();
-
-                // Ambil baris terakhir dalam container sebagai default
-                const container = document.getElementById('product-container-edit');
-                const productRows = container.querySelectorAll('.product-row');
-                const lastRow = productRows[productRows.length - 1];
-
-                // Set ke baris terakhir (atau baris lain jika sudah Anda tentukan)
-                window.targetRow = lastRow;
-
-                // Tampilkan modal
-                const modal = new bootstrap.Modal(document.getElementById('product-modal'));
-                modal.show();
+                const lastRow = document.querySelector('#product-container-edit .product-row:last-child');
+                openProductModal('modal-edit-invoice', lastRow);
             });
 
 
